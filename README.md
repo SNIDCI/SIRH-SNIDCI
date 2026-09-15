@@ -1,0 +1,120 @@
+# SIRH — Socle applicatif + Module Gestion des employés
+
+Application web de gestion RH, construite avec :
+- **Next.js 14** (App Router, TypeScript) — frontend + backend (Server Actions)
+- **Supabase** — base de données PostgreSQL, authentification, Row Level Security
+- **Tailwind CSS** — styles
+- **Vercel** — hébergement (recommandé)
+- **GitHub** — versionning et CI/CD
+
+Ce livrable contient le **socle** (authentification, navigation, structure du projet)
+et le **module Gestion des employés** (dossier du personnel, organigramme, historique de carrière).
+
+---
+
+## 1. Créer le projet Supabase
+
+1. Va sur [supabase.com](https://supabase.com) → **New project**.
+2. Une fois le projet créé, va dans **Project Settings → API** et récupère :
+   - `Project URL`
+   - `anon public key`
+3. Va dans **SQL Editor** et exécute, dans l'ordre :
+   - le contenu de `supabase/migrations/0001_init.sql` (schéma + sécurité)
+   - (optionnel, pour tester) le contenu de `supabase/seed.sql` (données de démo)
+4. Après ta première inscription dans l'app (étape 4 ci-dessous), remonte dans
+   **Table Editor → profiles** et mets manuellement ton rôle à `admin` pour ton
+   propre compte (le premier compte doit être promu admin à la main).
+
+## 2. Configurer les variables d'environnement
+
+```bash
+cp .env.example .env.local
+```
+
+Remplis `.env.local` avec l'URL et la clé récupérées à l'étape 1.
+
+## 3. Installer et lancer en local
+
+```bash
+npm install
+npm run dev
+```
+
+L'application est disponible sur http://localhost:3000.
+
+## 4. Créer ton premier compte
+
+Comme il n'y a pas encore d'écran d'inscription (volontairement — en entreprise,
+les comptes sont généralement créés par un admin), crée ton premier utilisateur
+directement depuis le Dashboard Supabase :
+
+**Authentication → Users → Add user** (renseigne un e-mail et un mot de passe).
+
+Puis dans **Table Editor → profiles**, ajoute une ligne :
+- `id` = l'UUID de l'utilisateur créé (visible dans Authentication → Users)
+- `full_name` = ton nom
+- `role` = `admin`
+
+Tu peux ensuite te connecter sur `/login` avec cet e-mail/mot de passe.
+
+## 5. Pousser sur GitHub
+
+```bash
+git init
+git add .
+git commit -m "Socle SIRH + module Gestion des employés"
+git branch -M main
+git remote add origin <URL_DE_TON_REPO_GITHUB>
+git push -u origin main
+```
+
+## 6. Déployer sur Vercel
+
+1. Sur [vercel.com](https://vercel.com) → **Add New → Project** → importe ton repo GitHub.
+2. Dans les **Environment Variables** du projet Vercel, ajoute les deux mêmes
+   variables que dans `.env.local` (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+3. Déploie. Chaque push sur `main` redéploiera automatiquement.
+
+---
+
+## Structure du projet
+
+```
+app/
+  login/                    → page de connexion
+  (app)/                    → espace authentifié (sidebar + topbar)
+    dashboard/              → tableau de bord (compteurs de base)
+    employees/               → liste des employés (recherche + filtre département)
+    employees/new/           → création d'une fiche employé
+    employees/[id]/          → détail, édition, historique de carrière
+    employees/org-chart/     → organigramme dynamique
+lib/
+  supabase/                 → clients Supabase (navigateur / serveur)
+  actions/employees.ts      → Server Actions (créer / mettre à jour un employé)
+  types.ts                  → types partagés
+components/
+  sidebar.tsx, topbar.tsx, employee-form.tsx
+supabase/
+  migrations/0001_init.sql  → schéma complet + Row Level Security
+  seed.sql                  → données de démonstration (facultatif)
+middleware.ts               → protection des routes + rafraîchissement de session
+```
+
+## Sécurité mise en place
+
+- **Row Level Security** activée sur toutes les tables.
+- Rôles applicatifs : `admin`, `rh`, `manager`, `employe`.
+  - `admin` / `rh` : accès complet aux employés.
+  - `manager` : lecture des fiches de son équipe directe uniquement.
+  - `employe` : lecture de sa propre fiche uniquement.
+- Le middleware Next.js protège toutes les routes de `(app)` : un utilisateur
+  non connecté est redirigé vers `/login`.
+
+## Prochaines étapes suggérées
+
+- Module **Temps & absences** (congés, soldes, workflow de validation)
+- Module **Recrutement** (pipeline de candidatures)
+- Écran d'administration pour créer/gérer les comptes et rôles depuis l'app
+  (actuellement fait à la main via le Dashboard Supabase)
+- Génération de types TypeScript automatique :
+  `npx supabase gen types typescript --project-id <id> > lib/types.ts`
