@@ -44,7 +44,7 @@ function OrgChartBranch({ node, depth }: { node: OrgNode; depth: number }) {
         className="panel inline-flex flex-col px-4 py-2 hover:border-accent"
       >
         <span className="text-sm font-medium text-ink">
-          {node.first_name} {node.last_name}
+          {node.last_name} {node.first_name}
         </span>
         {node.position_title && <span className="text-xs text-slate">{node.position_title}</span>}
       </Link>

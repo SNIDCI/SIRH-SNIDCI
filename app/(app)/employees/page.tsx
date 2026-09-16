@@ -96,7 +96,7 @@ export default async function EmployeesPage({
               <tr key={emp.id} className="border-b border-line last:border-0 hover:bg-canvas/40">
                 <td className="px-4 py-3">
                   <Link href={`/employees/${emp.id}`} className="font-medium text-ink hover:text-accent">
-                    {emp.first_name} {emp.last_name}
+                    {emp.last_name} {emp.first_name}
                   </Link>
                   <p className="text-xs text-slate">{emp.work_email}</p>
                 </td>

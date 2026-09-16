@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Tableau de bord" },
   { href: "/employees", label: "Employés" },
   { href: "/employees/org-chart", label: "Organigramme" },
+  { href: "/admin", label: "Administration" },
 ];
 
 export function Sidebar() {

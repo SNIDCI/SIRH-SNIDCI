@@ -6,11 +6,14 @@ import { EmployeeForm } from "@/components/employee-form";
 export default async function NewEmployeePage() {
   const supabase = createClient();
 
-  const [{ data: departments }, { data: positions }, { data: managers }] = await Promise.all([
-    supabase.from("departments").select("id, name").order("name"),
-    supabase.from("positions").select("id, title").order("title"),
-    supabase.from("employees").select("id, first_name, last_name").order("last_name"),
-  ]);
+  const [{ data: departments }, { data: positions }, { data: services }, { data: sites }, { data: managers }] =
+    await Promise.all([
+      supabase.from("departments").select("id, name").order("name"),
+      supabase.from("positions").select("id, title").order("title"),
+      supabase.from("services").select("id, name, department_id").order("name"),
+      supabase.from("sites").select("id, name").order("name"),
+      supabase.from("employees").select("id, first_name, last_name").order("last_name"),
+    ]);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -25,6 +28,8 @@ export default async function NewEmployeePage() {
           action={createEmployee}
           departments={departments ?? []}
           positions={positions ?? []}
+          services={services ?? []}
+          sites={sites ?? []}
           managers={managers ?? []}
           submitLabel="Créer l'employé"
         />

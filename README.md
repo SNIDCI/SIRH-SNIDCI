@@ -18,8 +18,10 @@ et le **module Gestion des employés** (dossier du personnel, organigramme, hist
 2. Une fois le projet créé, va dans **Project Settings → API** et récupère :
    - `Project URL`
    - `anon public key`
-3. Va dans **SQL Editor** et exécute, dans l'ordre :
-   - le contenu de `supabase/migrations/0001_init.sql` (schéma + sécurité)
+3. Va dans **SQL Editor** et exécute, **dans l'ordre** :
+   - le contenu de `supabase/migrations/0001_init.sql` (schéma initial + sécurité)
+   - le contenu de `supabase/migrations/0002_extend_employees.sql` (identité étendue,
+     contrats, rémunération, documents, référentiels sites/services)
    - (optionnel, pour tester) le contenu de `supabase/seed.sql` (données de démo)
 4. Après ta première inscription dans l'app (étape 4 ci-dessous), remonte dans
    **Table Editor → profiles** et mets manuellement ton rôle à `admin` pour ton
@@ -74,6 +76,35 @@ git push -u origin main
 2. Dans les **Environment Variables** du projet Vercel, ajoute les deux mêmes
    variables que dans `.env.local` (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
 3. Déploie. Chaque push sur `main` redéploiera automatiquement.
+
+## Nouveau : gérer l'organigramme et les référentiels
+
+Avant de créer des employés, va dans **Administration** (menu de gauche) et renseigne :
+1. **Départements** (les grands pôles : RH, Finance, Technologie…)
+2. **Services** (sous-divisions d'un département)
+3. **Postes** (intitulés précis, rattachés à un département)
+4. **Sites** (implantations géographiques)
+
+Ces listes alimentent ensuite automatiquement les menus déroulants du formulaire
+employé — c'est pour ça qu'ils apparaissaient vides au départ : ce ne sont pas des
+champs de texte libre, mais des listes à choisir, qui se remplissent au fur et à
+mesure que tu ajoutes tes données réelles dans Administration.
+
+L'**organigramme** (`/employees/org-chart`) se construit ensuite tout seul à partir
+du champ "Responsable hiérarchique" renseigné sur chaque fiche employé — aucune
+saisie manuelle de l'arbre n'est nécessaire.
+
+## Nouveau : fiche employé complète
+
+La fiche employé (`/employees/[id]`) est maintenant organisée en onglets :
+- **Identité & poste** — état civil, contacts, contact d'urgence, rattachement, poste
+- **Contrats** — historique des contrats et renouvellements
+- **Rémunération** — historique de référence (salaire, primes, augmentations) ;
+  le calcul de la paie elle-même reste géré par un logiciel externe (voir cahier
+  des charges, module Paie)
+- **Documents** — upload de fichiers (contrat, CV, diplômes, attestations…),
+  stockés de façon sécurisée et privée dans Supabase Storage
+- **Historique de carrière** — journal des évènements (embauche, mobilité…)
 
 ---
 

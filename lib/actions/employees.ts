@@ -8,20 +8,43 @@ export interface EmployeeFormState {
   error?: string;
 }
 
+function orNull(formData: FormData, key: string) {
+  const v = String(formData.get(key) ?? "").trim();
+  return v || null;
+}
+
 function readEmployeePayload(formData: FormData) {
   return {
+    // Identité
     first_name: String(formData.get("first_name") ?? "").trim(),
     last_name: String(formData.get("last_name") ?? "").trim(),
-    work_email: String(formData.get("work_email") ?? "").trim() || null,
-    personal_email: String(formData.get("personal_email") ?? "").trim() || null,
-    phone: String(formData.get("phone") ?? "").trim() || null,
-    position_id: String(formData.get("position_id") ?? "") || null,
-    department_id: String(formData.get("department_id") ?? "") || null,
-    manager_id: String(formData.get("manager_id") ?? "") || null,
-    contract_type: String(formData.get("contract_type") ?? "cdi"),
-    hire_date: String(formData.get("hire_date") ?? "") || new Date().toISOString().slice(0, 10),
+    photo_url: orNull(formData, "photo_url"),
+    birth_date: orNull(formData, "birth_date"),
+    birth_place: orNull(formData, "birth_place"),
+    nationality: orNull(formData, "nationality"),
+    gender: orNull(formData, "gender"),
+    marital_status: orNull(formData, "marital_status"),
+
+    // Contacts
+    work_email: orNull(formData, "work_email"),
+    personal_email: orNull(formData, "personal_email"),
+    phone_primary: orNull(formData, "phone_primary"),
+    phone_secondary: orNull(formData, "phone_secondary"),
+    address: orNull(formData, "address"),
+    emergency_contact_name: orNull(formData, "emergency_contact_name"),
+    emergency_contact_relation: orNull(formData, "emergency_contact_relation"),
+    emergency_contact_phone: orNull(formData, "emergency_contact_phone"),
+
+    // Informations professionnelles
+    department_id: orNull(formData, "department_id"),
+    service_id: orNull(formData, "service_id"),
+    position_id: orNull(formData, "position_id"),
+    manager_id: orNull(formData, "manager_id"),
+    site_id: orNull(formData, "site_id"),
     status: String(formData.get("status") ?? "actif"),
-    site: String(formData.get("site") ?? "").trim() || null,
+    contract_type: String(formData.get("contract_type") ?? "cdi"),
+    hire_date: orNull(formData, "hire_date") ?? new Date().toISOString().slice(0, 10),
+    trial_period_end: orNull(formData, "trial_period_end"),
   };
 }
 
@@ -33,7 +56,7 @@ export async function createEmployee(
   const payload = readEmployeePayload(formData);
 
   if (!payload.first_name || !payload.last_name) {
-    return { error: "Le prénom et le nom sont obligatoires." };
+    return { error: "Le nom et le prénom sont obligatoires." };
   }
 
   const { data, error } = await supabase
@@ -66,7 +89,7 @@ export async function updateEmployee(
   const payload = readEmployeePayload(formData);
 
   if (!payload.first_name || !payload.last_name) {
-    return { error: "Le prénom et le nom sont obligatoires." };
+    return { error: "Le nom et le prénom sont obligatoires." };
   }
 
   const { error } = await supabase
