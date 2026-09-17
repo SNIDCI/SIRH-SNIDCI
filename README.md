@@ -22,6 +22,7 @@ et le **module Gestion des employés** (dossier du personnel, organigramme, hist
    - le contenu de `supabase/migrations/0001_init.sql` (schéma initial + sécurité)
    - le contenu de `supabase/migrations/0002_extend_employees.sql` (identité étendue,
      contrats, rémunération, documents, référentiels sites/services)
+   - le contenu de `supabase/migrations/0003_profiles_email.sql` (email sur profils)
    - (optionnel, pour tester) le contenu de `supabase/seed.sql` (données de démo)
 4. Après ta première inscription dans l'app (étape 4 ci-dessous), remonte dans
    **Table Editor → profiles** et mets manuellement ton rôle à `admin` pour ton
@@ -105,6 +106,31 @@ La fiche employé (`/employees/[id]`) est maintenant organisée en onglets :
 - **Documents** — upload de fichiers (contrat, CV, diplômes, attestations…),
   stockés de façon sécurisée et privée dans Supabase Storage
 - **Historique de carrière** — journal des évènements (embauche, mobilité…)
+
+## Nouveau : comptes utilisateurs et rôles
+
+Le menu **Administration → Comptes & rôles** permet enfin de créer des accès
+sans passer par le Dashboard Supabase :
+1. Choisis un employé existant dans la liste (son e-mail professionnel se
+   remplit automatiquement, modifiable si besoin).
+2. Choisis son rôle (Administrateur / RH / Manager / Employé).
+3. Clique "Envoyer l'invitation" — la personne reçoit un e-mail pour choisir
+   son mot de passe elle-même (tu ne vois jamais son mot de passe).
+
+Tu peux ensuite changer le rôle de quelqu'un à tout moment, ou supprimer son
+compte, directement depuis cette page.
+
+⚠️ **Nouvelle variable d'environnement requise : `SUPABASE_SERVICE_ROLE_KEY`.**
+Cette fonctionnalité a besoin d'une clé technique supplémentaire pour pouvoir
+créer des comptes. Va dans Supabase → **Project Settings → API**, et sous
+"Project API keys", copie la clé **`service_role`** (différente de la clé
+`anon public` déjà utilisée). Ajoute-la :
+- dans `.env.local` en local, comme `SUPABASE_SERVICE_ROLE_KEY=...`
+- dans Vercel → Project Settings → Environment Variables, même nom.
+
+Cette clé est très sensible (elle contourne toutes les règles de sécurité) —
+ne la partage jamais et ne la mets jamais dans une variable commençant par
+`NEXT_PUBLIC_`, sinon elle serait visible par n'importe qui dans le navigateur.
 
 ---
 

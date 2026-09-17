@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 const SECTIONS = [
+  { href: "/admin/users", label: "Comptes & rôles", desc: "Créer des accès utilisateurs et attribuer les rôles." },
   { href: "/admin/departments", label: "Départements", desc: "Les grands pôles de l'entreprise." },
   { href: "/admin/services", label: "Services", desc: "Sous-divisions à l'intérieur d'un département." },
   { href: "/admin/positions", label: "Postes", desc: "Intitulés de poste rattachés à un département." },
