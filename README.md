@@ -132,6 +132,22 @@ Cette clé est très sensible (elle contourne toutes les règles de sécurité) 
 ne la partage jamais et ne la mets jamais dans une variable commençant par
 `NEXT_PUBLIC_`, sinon elle serait visible par n'importe qui dans le navigateur.
 
+### ⚠️ Configuration obligatoire pour que les invitations fonctionnent
+
+Par défaut, Supabase envoie les liens d'invitation vers `localhost:3000` (adresse
+de développement), ce qui casse le lien pour la personne invitée. Deux réglages
+à faire une seule fois :
+
+1. **Dans Supabase** → Authentication → **URL Configuration** :
+   - "Site URL" = l'adresse de ton app Vercel (ex. `https://sirh-app.vercel.app`)
+   - Dans "Redirect URLs", ajoute la même adresse suivie de `/**` (ex.
+     `https://sirh-app.vercel.app/**`)
+2. **Dans Vercel** → Environment Variables, ajoute `NEXT_PUBLIC_SITE_URL` avec
+   cette même adresse (sans `/` à la fin), et **redéploie** après l'avoir ajoutée.
+
+La personne invitée arrive ensuite sur une page `/auth/set-password` où elle
+choisit elle-même son mot de passe pour activer son compte.
+
 ---
 
 ## Structure du projet

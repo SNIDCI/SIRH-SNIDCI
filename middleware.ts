@@ -24,16 +24,22 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
-  const isPublicAsset = request.nextUrl.pathname.startsWith("/_next");
+  const pathname = request.nextUrl.pathname;
+  const isLoginRoute = pathname.startsWith("/login");
+  // /auth/* accueille les liens d'invitation et de réinitialisation de mot de passe :
+  // la session n'est établie que côté navigateur (tokens dans le fragment d'URL,
+  // jamais vus par le serveur), donc cette route doit rester accessible même
+  // sans cookie de session au moment où le serveur traite la requête.
+  const isAuthCallbackRoute = pathname.startsWith("/auth");
+  const isPublicAsset = pathname.startsWith("/_next");
 
-  if (!user && !isAuthRoute && !isPublicAsset) {
+  if (!user && !isLoginRoute && !isAuthCallbackRoute && !isPublicAsset) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  if (user && isLoginRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
