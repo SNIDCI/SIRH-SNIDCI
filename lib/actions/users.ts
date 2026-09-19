@@ -42,7 +42,7 @@ export async function inviteUser(_prev: SimpleFormState, formData: FormData): Pr
 
   const admin = createAdminClient();
   const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/set-password`,
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=/auth/set-password`,
   });
 
   if (inviteError) {
