@@ -103,6 +103,33 @@ export interface EmployeeDocument {
   uploaded_at: string;
 }
 
+export type PayRunStatus = "brouillon" | "valide";
+
+export interface PayslipLine {
+  label: string;
+  amount: number;
+}
+
+export interface PayRun {
+  id: string;
+  period_label: string;
+  period_month: string;
+  status: PayRunStatus;
+  created_at: string;
+}
+
+export interface Payslip {
+  id: string;
+  pay_run_id: string;
+  employee_id: string;
+  lines: PayslipLine[];
+  net_salary: number;
+  pdf_path: string | null;
+  generated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Placeholder minimal — à régénérer avec `supabase gen types typescript`
 // une fois le projet Supabase créé, pour un typage complet et automatique.
 export type Database = any;

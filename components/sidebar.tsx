@@ -7,6 +7,8 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Tableau de bord" },
   { href: "/employees", label: "Employés" },
   { href: "/employees/org-chart", label: "Organigramme" },
+  { href: "/payroll", label: "Paie" },
+  { href: "/my-payslips", label: "Mes bulletins" },
   { href: "/admin", label: "Administration" },
 ];
 

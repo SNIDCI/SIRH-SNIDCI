@@ -23,6 +23,8 @@ et le **module Gestion des employés** (dossier du personnel, organigramme, hist
    - le contenu de `supabase/migrations/0002_extend_employees.sql` (identité étendue,
      contrats, rémunération, documents, référentiels sites/services)
    - le contenu de `supabase/migrations/0003_profiles_email.sql` (email sur profils)
+   - le contenu de `supabase/migrations/0004_payroll.sql` (module Paie : périodes,
+     bulletins, stockage sécurisé)
    - (optionnel, pour tester) le contenu de `supabase/seed.sql` (données de démo)
 4. Après ta première inscription dans l'app (étape 4 ci-dessous), remonte dans
    **Table Editor → profiles** et mets manuellement ton rôle à `admin` pour ton
@@ -147,6 +149,28 @@ de développement), ce qui casse le lien pour la personne invitée. Deux réglag
 
 La personne invitée arrive ensuite sur une page `/auth/set-password` où elle
 choisit elle-même son mot de passe pour activer son compte.
+
+## Nouveau : module Paie (Modèle 1 — registre + bulletins)
+
+⚠️ **Ce module n'effectue aucun calcul légal automatique** (pas de calcul de
+CNPS, d'ITS, ou de toute autre cotisation/impôt). Il sert à enregistrer
+proprement les montants que tu as déjà calculés (à la main, avec ton
+comptable, ou via un tableur), et à produire un bulletin PDF propre et
+archivé pour chaque employé.
+
+Utilisation :
+1. Va dans **Paie** (menu de gauche), crée une nouvelle période (ex. "Janvier 2026").
+2. Clique sur la période, puis "Saisir" pour un employé.
+3. Ajoute les lignes du bulletin (Salaire de base, Prime de transport, Retenue
+   CNPS…) — utilise un montant négatif pour une retenue. Le "Net à payer"
+   se calcule automatiquement en additionnant les lignes.
+4. Clique "Enregistrer le bulletin", puis "Générer le PDF".
+5. L'employé concerné peut ensuite le retrouver lui-même dans **Mes bulletins**.
+
+Le nom "Mon Entreprise" affiché en en-tête du PDF est pour l'instant codé en
+dur dans `lib/actions/payroll.tsx` (constante `COMPANY_NAME`) — à personnaliser
+avec le vrai nom de ta société avant utilisation, ou dis-le-moi pour qu'on
+ajoute un écran de paramètres.
 
 ---
 
