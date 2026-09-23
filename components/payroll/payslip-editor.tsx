@@ -1,11 +1,22 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useFormState } from "react-dom";
 import { useRouter } from "next/navigation";
 import { savePayslip, generatePayslipPdf } from "@/lib/actions/payroll";
-import { SubmitButton } from "@/components/submit-button";
 import type { PayslipLine } from "@/lib/types";
+
+// État local d'édition : le montant reste une chaîne tant qu'on édite, pour ne
+// pas perdre le signe "-" ou un champ vide pendant la saisie (contrairement à
+// une conversion Number() à chaque frappe, qui casse la saisie d'un négatif).
+interface EditableLine {
+  label: string;
+  amount: string;
+}
+
+function toEditable(lines: PayslipLine[]): EditableLine[] {
+  return lines.map((l) => ({ label: l.label, amount: String(l.amount) }));
+}
 
 export function PayslipEditor({
   payRunId,
@@ -14,6 +25,9 @@ export function PayslipEditor({
   initialLines,
   netSalary,
   pdfUrl,
+  alreadySaved,
+  suggestedBaseSalary,
+  suggestedBonusesNotes,
 }: {
   payRunId: string;
   employeeId: string;
@@ -21,29 +35,47 @@ export function PayslipEditor({
   initialLines: PayslipLine[];
   netSalary: number;
   pdfUrl: string | null;
+  alreadySaved: boolean;
+  suggestedBaseSalary: number | null;
+  suggestedBonusesNotes: string | null;
 }) {
   const router = useRouter();
   const action = savePayslip.bind(null, payRunId, employeeId);
   const [state, formAction] = useFormState(action, {});
-  const [lines, setLines] = useState<PayslipLine[]>(
-    initialLines.length ? initialLines : [{ label: "Salaire de base", amount: 0 }]
+
+  const [lines, setLines] = useState<EditableLine[]>(() =>
+    initialLines.length
+      ? toEditable(initialLines)
+      : [{ label: "Salaire de base", amount: suggestedBaseSalary ? String(suggestedBaseSalary) : "0" }]
   );
+  const [saved, setSaved] = useState(alreadySaved);
+  const firstRender = useRef(true);
+
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (!state.error) setSaved(true);
+  }, [state]);
+
   const [isPending, startTransition] = useTransition();
   const [genError, setGenError] = useState<string | null>(null);
 
-  const total = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+  const total = lines.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
 
   function updateLine(i: number, field: "label" | "amount", value: string) {
-    setLines((prev) =>
-      prev.map((l, idx) => (idx === i ? { ...l, [field]: field === "amount" ? Number(value) : value } : l))
-    );
+    setSaved(false);
+    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: value } : l)));
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { label: "", amount: 0 }]);
+    setSaved(false);
+    setLines((prev) => [...prev, { label: "", amount: "0" }]);
   }
 
   function removeLine(i: number) {
+    setSaved(false);
     setLines((prev) => prev.filter((_, idx) => idx !== i));
   }
 
@@ -62,6 +94,14 @@ export function PayslipEditor({
         <p className="font-serif text-base text-ink">Bulletin — {employeeName}</p>
         {state.error && <p className="text-sm text-rose">{state.error}</p>}
 
+        {suggestedBaseSalary !== null && (
+          <p className="rounded bg-accent-soft px-3 py-2 text-xs text-accent-dark">
+            Dernier salaire de base enregistré dans l&apos;onglet Rémunération :{" "}
+            {suggestedBaseSalary.toLocaleString("fr-FR")} F
+            {suggestedBonusesNotes ? ` — Primes/avantages notés : ${suggestedBonusesNotes}` : ""}
+          </p>
+        )}
+
         <div className="space-y-2">
           {lines.map((line, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -69,8 +109,9 @@ export function PayslipEditor({
                 name="line_label"
                 value={line.label}
                 onChange={(e) => updateLine(i, "label", e.target.value)}
+                disabled={saved}
                 placeholder="Ex. Salaire de base, Prime de transport, Retenue CNPS…"
-                className="field-input flex-1"
+                className="field-input flex-1 disabled:opacity-60"
               />
               <input
                 name="line_amount"
@@ -78,36 +119,51 @@ export function PayslipEditor({
                 step="0.01"
                 value={line.amount}
                 onChange={(e) => updateLine(i, "amount", e.target.value)}
-                className="field-input w-36"
+                disabled={saved}
+                className="field-input w-36 disabled:opacity-60"
               />
-              <button
-                type="button"
-                onClick={() => removeLine(i)}
-                className="text-xs text-rose hover:underline"
-                aria-label="Supprimer la ligne"
-              >
-                Retirer
-              </button>
+              {!saved && (
+                <button
+                  type="button"
+                  onClick={() => removeLine(i)}
+                  className="text-xs text-rose hover:underline"
+                  aria-label="Supprimer la ligne"
+                >
+                  Retirer
+                </button>
+              )}
             </div>
           ))}
         </div>
 
-        <button type="button" onClick={addLine} className="btn-secondary text-xs">
-          + Ajouter une ligne
-        </button>
+        {!saved && (
+          <button type="button" onClick={addLine} className="btn-secondary text-xs">
+            + Ajouter une ligne
+          </button>
+        )}
 
         <p className="text-xs text-slate">
-          Utilise un montant négatif pour une retenue (ex. Retenue CNPS : -12 500).
+          Utilise un montant négatif pour une retenue (ex. Retenue CNPS : -12500).
         </p>
 
         <div className="flex items-center justify-between border-t border-line pt-4">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate">Net à payer (calculé)</p>
-            <p className="font-serif text-xl text-ink">
-              {total.toLocaleString("fr-FR")} F
-            </p>
+            <p className="font-serif text-xl text-ink">{total.toLocaleString("fr-FR")} F</p>
           </div>
-          <SubmitButton label="Enregistrer le bulletin" />
+
+          {saved ? (
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-sm font-medium text-accent-dark">
+                ✓ Enregistré
+              </span>
+              <button type="button" onClick={() => setSaved(false)} className="btn-secondary text-sm">
+                Modifier
+              </button>
+            </div>
+          ) : (
+            <button type="submit" className="btn-primary">Enregistrer le bulletin</button>
+          )}
         </div>
       </form>
 
@@ -115,7 +171,7 @@ export function PayslipEditor({
         <p className="font-serif text-base text-ink">Bulletin PDF</p>
         {genError && <p className="text-sm text-rose">{genError}</p>}
 
-        {netSalary > 0 || initialLines.length ? (
+        {netSalary !== 0 || initialLines.length ? (
           <div className="flex items-center gap-3">
             <button onClick={handleGenerate} disabled={isPending} className="btn-primary">
               {isPending ? "Génération…" : pdfUrl ? "Régénérer le PDF" : "Générer le PDF"}

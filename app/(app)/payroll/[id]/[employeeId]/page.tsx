@@ -10,10 +10,17 @@ export default async function PayslipEditPage({
 }) {
   const supabase = createClient();
 
-  const [{ data: payRun }, { data: employee }, { data: payslip }] = await Promise.all([
+  const [{ data: payRun }, { data: employee }, { data: payslip }, { data: latestComp }] = await Promise.all([
     supabase.from("pay_runs").select("*").eq("id", params.id).single(),
     supabase.from("employees").select("id, first_name, last_name").eq("id", params.employeeId).single(),
     supabase.from("payslips").select("*").eq("pay_run_id", params.id).eq("employee_id", params.employeeId).maybeSingle(),
+    supabase
+      .from("compensation_history")
+      .select("base_salary, bonuses_notes")
+      .eq("employee_id", params.employeeId)
+      .order("effective_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   if (!payRun || !employee) notFound();
@@ -44,6 +51,9 @@ export default async function PayslipEditPage({
           initialLines={payslip?.lines ?? []}
           netSalary={payslip?.net_salary ?? 0}
           pdfUrl={pdfUrl}
+          alreadySaved={!!payslip}
+          suggestedBaseSalary={latestComp?.base_salary ?? null}
+          suggestedBonusesNotes={latestComp?.bonuses_notes ?? null}
         />
       </div>
     </div>

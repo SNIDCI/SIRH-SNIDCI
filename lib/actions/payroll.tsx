@@ -10,7 +10,7 @@ export interface SimpleFormState {
   error?: string;
 }
 
-const COMPANY_NAME = "SNIDCI"; // à personnaliser plus tard dans un écran de paramètres
+const COMPANY_NAME = "Mon Entreprise"; // à personnaliser plus tard dans un écran de paramètres
 
 export async function createPayRun(_prev: SimpleFormState, formData: FormData): Promise<SimpleFormState> {
   const period_month = String(formData.get("period_month") ?? ""); // format YYYY-MM
@@ -79,28 +79,35 @@ export async function generatePayslipPdf(payRunId: string, employeeId: string): 
 
   if (!payslip || !payRun || !employee) return { error: "Données introuvables." };
 
-  const buffer = await renderToBuffer(
-    <PayslipPdf
-      companyName={COMPANY_NAME}
-      periodLabel={payRun.period_label}
-      employeeName={`${employee.last_name} ${employee.first_name}`}
-      employeeRole={(employee as any).position?.title ?? ""}
-      lines={payslip.lines}
-      netSalary={payslip.net_salary}
-    />
-  );
+  let buffer: Buffer;
+  try {
+    buffer = await renderToBuffer(
+      <PayslipPdf
+        companyName={COMPANY_NAME}
+        periodLabel={payRun.period_label}
+        employeeName={`${employee.last_name} ${employee.first_name}`}
+        employeeRole={(employee as any).position?.title ?? ""}
+        lines={payslip.lines}
+        netSalary={payslip.net_salary}
+      />
+    );
+  } catch (e: any) {
+    return { error: "Échec de la mise en page du PDF : " + (e?.message ?? String(e)) };
+  }
 
   const path = `${employeeId}/${payRunId}.pdf`;
   const { error: uploadError } = await supabase.storage
     .from("payslips")
     .upload(path, buffer, { contentType: "application/pdf", upsert: true });
 
-  if (uploadError) return { error: "Échec de la génération : " + uploadError.message };
+  if (uploadError) return { error: "Échec de l'envoi du fichier : " + uploadError.message };
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("payslips")
     .update({ pdf_path: path, generated_at: new Date().toISOString() })
     .eq("id", payslip.id);
+
+  if (updateError) return { error: "Échec de la mise à jour : " + updateError.message };
 
   revalidatePath(`/payroll/${payRunId}`);
   return {};

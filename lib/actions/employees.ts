@@ -76,6 +76,30 @@ export async function createEmployee(
     effective_date: payload.hire_date,
   });
 
+  // Le contrat initial est créé automatiquement à partir des informations
+  // professionnelles déjà saisies (type de contrat, date d'entrée, période d'essai).
+  await supabase.from("employee_contracts").insert({
+    employee_id: data.id,
+    contract_type: payload.contract_type,
+    start_date: payload.hire_date,
+    trial_period_end: payload.trial_period_end,
+    is_renewal: false,
+    notes: "Contrat initial, créé automatiquement à la création de la fiche.",
+  });
+
+  // Rémunération initiale (facultative) : si un salaire de base est renseigné,
+  // on crée directement la première entrée de l'historique de rémunération.
+  const initialSalary = Number(formData.get("initial_base_salary") ?? 0);
+  if (initialSalary > 0) {
+    await supabase.from("compensation_history").insert({
+      employee_id: data.id,
+      effective_date: payload.hire_date,
+      base_salary: initialSalary,
+      bonuses_notes: orNull(formData, "initial_bonuses_notes"),
+      change_reason: "Embauche",
+    });
+  }
+
   revalidatePath("/employees");
   redirect(`/employees/${data.id}`);
 }

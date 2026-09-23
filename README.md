@@ -172,6 +172,21 @@ dur dans `lib/actions/payroll.tsx` (constante `COMPANY_NAME`) — à personnalis
 avec le vrai nom de ta société avant utilisation, ou dis-le-moi pour qu'on
 ajoute un écran de paramètres.
 
+## Nouveau : navigation en haut, contrat/rémunération à la création, corrections Paie
+
+- La navigation est passée d'une sidebar verticale à une **barre horizontale en
+  haut** de l'écran.
+- La création d'un employé génère désormais **automatiquement un premier
+  contrat** (à partir des infos déjà saisies) et propose une section facultative
+  **"Rémunération initiale"**. Les documents restent à ajouter après création
+  (l'upload a besoin que la fiche existe déjà).
+- Dans **Paie**, l'éditeur de bulletin pré-remplit le "Salaire de base" avec le
+  dernier montant connu dans l'onglet Rémunération de l'employé, accepte les
+  montants négatifs (retenues), et affiche **"✓ Enregistré" + un bouton
+  "Modifier"** une fois le bulletin sauvegardé.
+- Correction d'un bug empêchant la génération du PDF sur certains
+  environnements (configuration de compatibilité ajoutée dans `next.config.mjs`).
+
 ---
 
 ## Structure du projet

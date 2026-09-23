@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Sidebar } from "@/components/sidebar";
-import { Topbar } from "@/components/topbar";
+import { TopNav } from "@/components/top-nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient();
@@ -18,15 +17,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .single();
 
   return (
-    <div className="flex h-screen">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar
-          userName={profile?.full_name ?? user.email ?? "Utilisateur"}
-          userRole={profile?.role ?? "employe"}
-        />
-        <main className="flex-1 overflow-y-auto p-8">{children}</main>
-      </div>
+    <div className="min-h-screen bg-canvas">
+      <TopNav
+        userName={profile?.full_name ?? user.email ?? "Utilisateur"}
+        userRole={profile?.role ?? "employe"}
+      />
+      <main className="mx-auto max-w-6xl p-8">{children}</main>
     </div>
   );
 }

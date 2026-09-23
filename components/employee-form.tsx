@@ -222,10 +222,43 @@ export function EmployeeForm({
         </div>
         <p className="text-xs text-slate">
           Les intitulés (départements, services, postes, sites) se gèrent dans{" "}
-          <span className="font-medium">Administration</span>, dans le menu de gauche — ils apparaîtront
+          <span className="font-medium">Administration</span>, dans le menu du haut — ils apparaîtront
           ensuite automatiquement dans ces listes déroulantes.
         </p>
       </section>
+
+      {/* ---------- RÉMUNÉRATION INITIALE (à la création uniquement) ---------- */}
+      {!employee?.id && (
+        <section className="space-y-4 border-t border-line pt-6">
+          <SectionTitle>Rémunération initiale</SectionTitle>
+          <p className="text-xs text-slate">
+            Facultatif — renseigne-la maintenant si tu la connais déjà, ou ajoute-la plus tard
+            depuis l&apos;onglet Rémunération de la fiche employé.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="field-label" htmlFor="initial_base_salary">Salaire de base</label>
+              <input
+                id="initial_base_salary"
+                name="initial_base_salary"
+                type="number"
+                min="0"
+                step="0.01"
+                className="field-input"
+              />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="initial_bonuses_notes">Primes / indemnités / avantages</label>
+              <input
+                id="initial_bonuses_notes"
+                name="initial_bonuses_notes"
+                className="field-input"
+                placeholder="Ex. Prime de transport 25 000 F…"
+              />
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="flex justify-end gap-3 border-t border-line pt-6">
         <SubmitButton label={submitLabel} />
