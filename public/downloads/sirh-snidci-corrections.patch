@@ -1,0 +1,945 @@
+From f61ae1101cc5e23d36a71cfb51150d193cddd805 Mon Sep 17 00:00:00 2001
+From: audit <a@b.c>
+Date: Thu, 24 Sep 2026 13:20:16 +0000
+Subject: [PATCH] =?UTF-8?q?Corrections=20audit=20:=20invitation,=20uploads?=
+ =?UTF-8?q?,=20PDF,=20RLS,=20r=C3=B4les?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .env.example                             |   7 +
+ .gitignore                               |  15 ++
+ README.md                                |  16 +++
+ app/(app)/admin/layout.tsx               |   7 +
+ app/(app)/admin/users/page.tsx           |   2 +
+ app/(app)/employees/page.tsx             |  10 +-
+ app/(app)/my-payslips/page.tsx           |   8 +-
+ app/(app)/payroll/layout.tsx             |   6 +
+ app/auth/confirm/route.ts                |  14 +-
+ app/auth/set-password/page.tsx           |  97 ++++++++++---
+ components/photo-uploader.tsx            |   8 +-
+ components/top-nav.tsx                   |  36 +++--
+ lib/actions/documents.ts                 |  11 +-
+ lib/actions/employees.ts                 |  11 +-
+ lib/actions/payroll.tsx                  |  17 ++-
+ lib/actions/users.ts                     |  39 +++++-
+ lib/auth.ts                              |  26 ++++
+ lib/payslip-pdf.tsx                      |  10 +-
+ lib/storage-path.ts                      |  21 +++
+ next.config.mjs                          |   6 +
+ supabase/migrations/0005_corrections.sql | 167 +++++++++++++++++++++++
+ 21 files changed, 481 insertions(+), 53 deletions(-)
+ create mode 100644 .env.example
+ create mode 100644 .gitignore
+ create mode 100644 app/(app)/admin/layout.tsx
+ create mode 100644 app/(app)/payroll/layout.tsx
+ create mode 100644 lib/auth.ts
+ create mode 100644 lib/storage-path.ts
+ create mode 100644 supabase/migrations/0005_corrections.sql
+
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..6a63cf8
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,7 @@
++# Copier ce fichier en .env.local puis remplir les valeurs (Supabase > Project Settings > API)
++NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
++NEXT_PUBLIC_SUPABASE_ANON_KEY=
++# Clé secrète — serveur uniquement, ne JAMAIS la préfixer par NEXT_PUBLIC_
++SUPABASE_SERVICE_ROLE_KEY=
++# URL publique de l'app, sans "/" final (ex. https://sirh-snidci.vercel.app)
++NEXT_PUBLIC_SITE_URL=http://localhost:3000
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..60d2102
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,15 @@
++# dépendances
++node_modules/
++# build Next.js
++.next/
++out/
++# secrets — NE JAMAIS COMMITER
++.env
++.env.local
++.env.*.local
++# divers
++.DS_Store
++*.log
++.vercel
++next-env.d.ts
++*.tsbuildinfo
+diff --git a/README.md b/README.md
+index b7dceb9..7fbc81a 100644
+--- a/README.md
++++ b/README.md
+@@ -230,3 +230,19 @@ middleware.ts               → protection des routes + rafraîchissement de ses
+   (actuellement fait à la main via le Dashboard Supabase)
+ - Génération de types TypeScript automatique :
+   `npx supabase gen types typescript --project-id <id> > lib/types.ts`
++
++---
++
++## Corrections (audit) — à appliquer
++
++1. **Exécuter `supabase/migrations/0005_corrections.sql`** dans Supabase > SQL Editor.
++2. **Supabase > Authentication > URL Configuration** : `Site URL` = URL Vercel ;
++   `Redirect URLs` doit contenir `https://<ton-app>.vercel.app/**` (et `http://localhost:3000/**` en local).
++3. **Vercel** : vérifier `NEXT_PUBLIC_SITE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, puis redéployer.
++4. (Recommandé) **Supabase > Authentication > Email Templates > Invite user** : remplacer le lien par
++   `{{ .SiteURL }}/auth/set-password?token_hash={{ .TokenHash }}&type=invite`
++   (la page gère les deux formats, celui-ci est plus robuste).
++
++Premier administrateur (plus besoin d'insérer le profil à la main grâce au trigger) :
++créer l'utilisateur dans Authentication > Users, puis :
++`update public.profiles set role = 'admin' where email = 'ton@email.com';`
+diff --git a/app/(app)/admin/layout.tsx b/app/(app)/admin/layout.tsx
+new file mode 100644
+index 0000000..1bea6bc
+--- /dev/null
++++ b/app/(app)/admin/layout.tsx
+@@ -0,0 +1,7 @@
++import { requireRole } from "@/lib/auth";
++
++export default async function AdminLayout({ children }: { children: React.ReactNode }) {
++  // Référentiels : admin + RH (conforme aux policies RLS). Comptes : admin seul (vérifié dans la page).
++  await requireRole(["admin", "rh"]);
++  return <>{children}</>;
++}
+diff --git a/app/(app)/admin/users/page.tsx b/app/(app)/admin/users/page.tsx
+index 84a40c3..33f9914 100644
+--- a/app/(app)/admin/users/page.tsx
++++ b/app/(app)/admin/users/page.tsx
+@@ -1,7 +1,9 @@
+ import { createClient } from "@/lib/supabase/server";
+ import { UsersAdmin } from "@/components/admin/users-admin";
++import { requireRole } from "@/lib/auth";
+ 
+ export default async function UsersPage() {
++  await requireRole(["admin"]);
+   const supabase = createClient();
+ 
+   const [{ data: accounts }, { data: employees }] = await Promise.all([
+diff --git a/app/(app)/employees/page.tsx b/app/(app)/employees/page.tsx
+index a2fc6f5..753a7e6 100644
+--- a/app/(app)/employees/page.tsx
++++ b/app/(app)/employees/page.tsx
+@@ -37,10 +37,12 @@ export default async function EmployeesPage({
+   if (searchParams.department) {
+     query = query.eq("department_id", searchParams.department);
+   }
+-  if (searchParams.q) {
+-    query = query.or(
+-      `first_name.ilike.%${searchParams.q}%,last_name.ilike.%${searchParams.q}%,work_email.ilike.%${searchParams.q}%`
+-    );
++  // Les caractères , ( ) * % : ont un sens dans la syntaxe de filtre PostgREST :
++  // les injecter tels quels dans .or() cassait la requête (liste vide) ou
++  // permettait de modifier le filtre. On les retire avant de construire la recherche.
++  const q = (searchParams.q ?? "").replace(/[,()*%:\\]/g, " ").trim();
++  if (q) {
++    query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,work_email.ilike.%${q}%`);
+   }
+ 
+   const { data: employees } = await query;
+diff --git a/app/(app)/my-payslips/page.tsx b/app/(app)/my-payslips/page.tsx
+index c9fe3ae..123130f 100644
+--- a/app/(app)/my-payslips/page.tsx
++++ b/app/(app)/my-payslips/page.tsx
+@@ -23,8 +23,12 @@ export default async function MyPayslipsPage() {
+ 
+   const { data: payslips } = await supabase
+     .from("payslips")
+-    .select("id, net_salary, pdf_path, pay_run:pay_runs(period_label, period_month)")
++    // !inner + filtre : seuls les bulletins des périodes VALIDÉES sont visibles par
++    // l'employé (avant : un bulletin brouillon encore en cours de correction
++    // apparaissait dès que son PDF était généré).
++    .select("id, net_salary, pdf_path, pay_run:pay_runs!inner(period_label, period_month, status)")
+     .eq("employee_id", profile.employee_id)
++    .eq("pay_run.status", "valide")
+     .not("pdf_path", "is", null)
+     .order("created_at", { ascending: false });
+ 
+@@ -48,7 +52,7 @@ export default async function MyPayslipsPage() {
+             <div key={p.id} className="flex items-center justify-between px-4 py-3">
+               <div>
+                 <p className="text-sm font-medium text-ink">{p.pay_run?.period_label}</p>
+-                <p className="text-xs text-slate">{p.net_salary.toLocaleString("fr-FR")} F net</p>
++                <p className="text-xs text-slate">{Number(p.net_salary).toLocaleString("fr-FR")} FCFA net</p>
+               </div>
+               {p.url && (
+                 <a href={p.url} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">
+diff --git a/app/(app)/payroll/layout.tsx b/app/(app)/payroll/layout.tsx
+new file mode 100644
+index 0000000..de41f7c
+--- /dev/null
++++ b/app/(app)/payroll/layout.tsx
+@@ -0,0 +1,6 @@
++import { requireRole } from "@/lib/auth";
++
++export default async function PayrollLayout({ children }: { children: React.ReactNode }) {
++  await requireRole(["admin", "rh"]);
++  return <>{children}</>;
++}
+diff --git a/app/auth/confirm/route.ts b/app/auth/confirm/route.ts
+index 7ead52d..d70e465 100644
+--- a/app/auth/confirm/route.ts
++++ b/app/auth/confirm/route.ts
+@@ -42,8 +42,20 @@ export async function GET(request: Request) {
+     verified = !error;
+   }
+ 
++  // N'autorise que des chemins internes (évite une redirection ouverte via ?next=)
++  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/auth/set-password";
++
+   if (verified) {
+-    return NextResponse.redirect(`${origin}${next}`);
++    return NextResponse.redirect(`${origin}${safeNext}`);
++  }
++
++  // Aucun paramètre dans la query : c'est le cas des invitations envoyées avec
++  // inviteUserByEmail() (flux implicite) — les jetons sont dans le #fragment de
++  // l'URL, invisible pour le serveur. Le navigateur conserve ce fragment lors
++  // d'une redirection 3xx, donc on redirige vers la page cliente qui saura le lire.
++  // (Avant : redirection systématique vers /login?error=lien_invalide.)
++  if (!token_hash && !code) {
++    return NextResponse.redirect(`${origin}${safeNext}`);
+   }
+ 
+   return NextResponse.redirect(`${origin}/login?error=lien_invalide`);
+diff --git a/app/auth/set-password/page.tsx b/app/auth/set-password/page.tsx
+index 0c3c818..273fb9a 100644
+--- a/app/auth/set-password/page.tsx
++++ b/app/auth/set-password/page.tsx
+@@ -4,45 +4,96 @@ import { useEffect, useState } from "react";
+ import { useRouter } from "next/navigation";
+ import { createClient } from "@/lib/supabase/client";
+ 
++/**
++ * Page d'activation de compte / réinitialisation de mot de passe.
++ *
++ * POURQUOI CETTE VERSION : une invitation envoyée avec
++ * `admin.auth.admin.inviteUserByEmail()` (clé service_role, côté serveur) utilise
++ * le flux "implicite" de Supabase : la session arrive dans le FRAGMENT de l'URL
++ * (#access_token=...&refresh_token=...). Ce fragment n'est jamais envoyé au
++ * serveur, et le client navigateur de @supabase/ssr (configuré en flux PKCE)
++ * ne le traite pas automatiquement. Résultat avant correction : "lien invalide".
++ *
++ * On gère donc explicitement les 3 formats possibles :
++ *   1. #access_token=...&refresh_token=...    → setSession()
++ *   2. ?token_hash=...&type=invite|recovery   → verifyOtp()
++ *   3. ?code=...                              → exchangeCodeForSession()
++ * + les erreurs renvoyées par Supabase (#error_description=...).
++ */
+ export default function SetPasswordPage() {
+   const router = useRouter();
+-  const supabase = createClient();
++  const [supabase] = useState(() => createClient());
+ 
+   const [checking, setChecking] = useState(true);
+   const [sessionReady, setSessionReady] = useState(false);
++  const [linkError, setLinkError] = useState<string | null>(null);
+   const [password, setPassword] = useState("");
+   const [confirm, setConfirm] = useState("");
+   const [error, setError] = useState<string | null>(null);
+   const [submitting, setSubmitting] = useState(false);
+ 
+   useEffect(() => {
+-    // Le lien d'invitation contient les jetons de session dans l'URL ; le client
+-    // Supabase les détecte automatiquement au chargement de la page et crée la
+-    // session. On vérifie ici que c'est bien arrivé avant d'afficher le formulaire.
+     let cancelled = false;
+ 
+-    async function checkSession() {
+-      const { data } = await supabase.auth.getSession();
+-      if (cancelled) return;
+-
+-      if (data.session) {
+-        setSessionReady(true);
++    async function establishSession() {
++      const url = new URL(window.location.href);
++      const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
++      const query = url.searchParams;
++
++      // Erreur renvoyée par Supabase (lien expiré, déjà utilisé...)
++      const errDesc = hash.get("error_description") ?? query.get("error_description");
++      if (errDesc) {
++        const code = hash.get("error_code") ?? query.get("error_code");
++        setLinkError(
++          code === "otp_expired"
++            ? "Ce lien a expiré ou a déjà été utilisé."
++            : decodeURIComponent(errDesc.replace(/\+/g, " "))
++        );
+         setChecking(false);
+         return;
+       }
+ 
+-      // Sur certains navigateurs, la session met un instant à s'établir : on
+-      // réessaie une fois après un court délai avant de conclure à un échec.
+-      setTimeout(async () => {
+-        if (cancelled) return;
+-        const retry = await supabase.auth.getSession();
+-        setSessionReady(!!retry.data.session);
+-        setChecking(false);
+-      }, 1200);
++      try {
++        const access_token = hash.get("access_token");
++        const refresh_token = hash.get("refresh_token");
++        const token_hash = query.get("token_hash");
++        const type = query.get("type");
++        const code = query.get("code");
++
++        if (access_token && refresh_token) {
++          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
++          if (error) throw error;
++        } else if (token_hash && type) {
++          const { error } = await supabase.auth.verifyOtp({
++            token_hash,
++            type: type as "invite" | "recovery" | "signup" | "magiclink" | "email",
++          });
++          if (error) throw error;
++        } else if (code) {
++          const { error } = await supabase.auth.exchangeCodeForSession(code);
++          if (error) throw error;
++        }
++      } catch (e: unknown) {
++        if (!cancelled) {
++          setLinkError(e instanceof Error ? e.message : "Lien invalide.");
++          setChecking(false);
++        }
++        return;
++      }
++
++      // Nettoie l'URL (retire les jetons de la barre d'adresse / de l'historique)
++      window.history.replaceState(null, "", url.pathname);
++
++      const { data } = await supabase.auth.getSession();
++      if (cancelled) return;
++      setSessionReady(!!data.session);
++      setChecking(false);
+     }
+ 
+-    checkSession();
+-    return () => { cancelled = true; };
++    establishSession();
++    return () => {
++      cancelled = true;
++    };
+   }, [supabase]);
+ 
+   async function handleSubmit(e: React.FormEvent) {
+@@ -84,8 +135,8 @@ export default function SetPasswordPage() {
+ 
+           {!checking && !sessionReady && (
+             <p className="text-sm text-rose">
+-              Ce lien est invalide ou a expiré. Demande à ton administrateur RH de
+-              t&apos;envoyer une nouvelle invitation.
++              {linkError ?? "Ce lien est invalide ou a expiré."} Demande à ton administrateur RH
++              de t&apos;envoyer une nouvelle invitation.
+             </p>
+           )}
+ 
+@@ -98,6 +149,7 @@ export default function SetPasswordPage() {
+                   type="password"
+                   required
+                   minLength={8}
++                  autoComplete="new-password"
+                   value={password}
+                   onChange={(e) => setPassword(e.target.value)}
+                   className="field-input"
+@@ -110,6 +162,7 @@ export default function SetPasswordPage() {
+                   id="confirm"
+                   type="password"
+                   required
++                  autoComplete="new-password"
+                   value={confirm}
+                   onChange={(e) => setConfirm(e.target.value)}
+                   className="field-input"
+diff --git a/components/photo-uploader.tsx b/components/photo-uploader.tsx
+index 230cd71..0459001 100644
+--- a/components/photo-uploader.tsx
++++ b/components/photo-uploader.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useState } from "react";
+ import { createClient } from "@/lib/supabase/client";
++import { safeStorageName } from "@/lib/storage-path";
+ 
+ export function PhotoUploader({
+   employeeId,
+@@ -22,7 +23,12 @@ export function PhotoUploader({
+     setUploading(true);
+     setError(null);
+ 
+-    const path = `${employeeId}/${Date.now()}-${file.name}`;
++    if (file.size > 5 * 1024 * 1024) {
++      setError("Photo trop volumineuse (5 Mo maximum).");
++      return;
++    }
++
++    const path = `${employeeId}/${Date.now()}-${safeStorageName(file.name)}`;
+     const { error: uploadError } = await supabase.storage
+       .from("employee-photos")
+       .upload(path, file, { upsert: true });
+diff --git a/components/top-nav.tsx b/components/top-nav.tsx
+index db481ba..6b6e8d9 100644
+--- a/components/top-nav.tsx
++++ b/components/top-nav.tsx
+@@ -4,13 +4,14 @@ import Link from "next/link";
+ import { usePathname, useRouter } from "next/navigation";
+ import { createClient } from "@/lib/supabase/client";
+ 
++const ALL = ["admin", "rh", "manager", "employe"];
+ const NAV_ITEMS = [
+-  { href: "/dashboard", label: "Tableau de bord" },
+-  { href: "/employees", label: "Employés" },
+-  { href: "/employees/org-chart", label: "Organigramme" },
+-  { href: "/payroll", label: "Paie" },
+-  { href: "/my-payslips", label: "Mes bulletins" },
+-  { href: "/admin", label: "Administration" },
++  { href: "/dashboard", label: "Tableau de bord", roles: ALL },
++  { href: "/employees", label: "Employés", roles: ["admin", "rh", "manager"] },
++  { href: "/employees/org-chart", label: "Organigramme", roles: ALL },
++  { href: "/payroll", label: "Paie", roles: ["admin", "rh"] },
++  { href: "/my-payslips", label: "Mes bulletins", roles: ALL },
++  { href: "/admin", label: "Administration", roles: ["admin", "rh"] },
+ ];
+ 
+ export function TopNav({ userName, userRole }: { userName: string; userRole: string }) {
+@@ -32,8 +33,12 @@ export function TopNav({ userName, userRole }: { userName: string; userRole: str
+         </Link>
+ 
+         <nav className="flex items-center gap-1 overflow-x-auto">
+-          {NAV_ITEMS.map((item) => {
+-            const active = pathname === item.href || pathname?.startsWith(item.href + "/");
++          {NAV_ITEMS.filter((item) => item.roles.includes(userRole)).map((item) => {
++            // "Employés" ne doit pas rester actif quand on est sur "Organigramme"
++            const active =
++              pathname === item.href ||
++              (pathname?.startsWith(item.href + "/") &&
++                !NAV_ITEMS.some((o) => o.href !== item.href && o.href.startsWith(item.href) && pathname.startsWith(o.href)));
+             return (
+               <Link
+                 key={item.href}
+@@ -51,11 +56,16 @@ export function TopNav({ userName, userRole }: { userName: string; userRole: str
+         </nav>
+ 
+         <div className="ml-auto flex flex-none items-center gap-4">
+-          <input
+-            type="search"
+-            placeholder="Rechercher…"
+-            className="hidden w-48 rounded border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-canvas/50 focus:border-accent sm:block"
+-          />
++          {userRole !== "employe" && (
++            <form action="/employees" method="get" className="hidden sm:block">
++              <input
++                type="search"
++                name="q"
++                placeholder="Rechercher un employé…"
++                className="w-48 rounded border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-canvas/50 focus:border-accent"
++              />
++            </form>
++          )}
+           <div className="text-right">
+             <p className="text-sm font-medium text-white">{userName}</p>
+             <p className="text-xs capitalize text-canvas/60">{userRole}</p>
+diff --git a/lib/actions/documents.ts b/lib/actions/documents.ts
+index 019283a..9124c80 100644
+--- a/lib/actions/documents.ts
++++ b/lib/actions/documents.ts
+@@ -3,6 +3,9 @@
+ import { revalidatePath } from "next/cache";
+ import { createClient } from "@/lib/supabase/server";
+ import type { SimpleFormState } from "@/lib/actions/reference-data";
++import { safeStorageName } from "@/lib/storage-path";
++
++const MAX_SIZE = 10 * 1024 * 1024; // 10 Mo (aligné sur next.config.mjs)
+ 
+ export async function uploadDocument(
+   employeeId: string,
+@@ -17,7 +20,11 @@ export async function uploadDocument(
+     return { error: "Sélectionne un fichier à envoyer." };
+   }
+ 
+-  const path = `${employeeId}/${Date.now()}-${file.name}`;
++  if (file.size > MAX_SIZE) {
++    return { error: "Fichier trop volumineux (10 Mo maximum)." };
++  }
++
++  const path = `${employeeId}/${Date.now()}-${safeStorageName(file.name)}`;
+   const { error: uploadError } = await supabase.storage
+     .from("employee-documents")
+     .upload(path, file);
+@@ -34,6 +41,8 @@ export async function uploadDocument(
+   });
+ 
+   if (insertError) {
++    // Évite un fichier orphelin dans le bucket si l'insertion échoue
++    await supabase.storage.from("employee-documents").remove([path]);
+     return { error: insertError.message };
+   }
+ 
+diff --git a/lib/actions/employees.ts b/lib/actions/employees.ts
+index d85ea77..6e3d3f7 100644
+--- a/lib/actions/employees.ts
++++ b/lib/actions/employees.ts
+@@ -116,14 +116,21 @@ export async function updateEmployee(
+     return { error: "Le nom et le prénom sont obligatoires." };
+   }
+ 
+-  const { error } = await supabase
++  // .select() : avec la RLS, un UPDATE non autorisé ne renvoie PAS d'erreur, il
++  // modifie simplement 0 ligne. Sans ce contrôle, l'écran laissait croire que
++  // l'enregistrement avait réussi (ex. un manager ou un employé sur sa fiche).
++  const { data: updated, error } = await supabase
+     .from("employees")
+     .update(payload)
+-    .eq("id", employeeId);
++    .eq("id", employeeId)
++    .select("id");
+ 
+   if (error) {
+     return { error: "Erreur lors de la mise à jour : " + error.message };
+   }
++  if (!updated?.length) {
++    return { error: "Modification refusée : tu n'as pas les droits pour modifier cette fiche." };
++  }
+ 
+   revalidatePath("/employees");
+   revalidatePath(`/employees/${employeeId}`);
+diff --git a/lib/actions/payroll.tsx b/lib/actions/payroll.tsx
+index 9ac29f2..efdf309 100644
+--- a/lib/actions/payroll.tsx
++++ b/lib/actions/payroll.tsx
+@@ -12,6 +12,12 @@ export interface SimpleFormState {
+ 
+ const COMPANY_NAME = "Mon Entreprise"; // à personnaliser plus tard dans un écran de paramètres
+ 
++/** Une période validée est figée : plus aucune modification de bulletin. */
++async function isPayRunLocked(supabase: ReturnType<typeof createClient>, payRunId: string) {
++  const { data } = await supabase.from("pay_runs").select("status").eq("id", payRunId).single();
++  return data?.status === "valide";
++}
++
+ export async function createPayRun(_prev: SimpleFormState, formData: FormData): Promise<SimpleFormState> {
+   const period_month = String(formData.get("period_month") ?? ""); // format YYYY-MM
+   if (!period_month) return { error: "La période est obligatoire." };
+@@ -43,6 +49,9 @@ export async function savePayslip(
+   formData: FormData
+ ): Promise<SimpleFormState> {
+   const supabase = createClient();
++  if (await isPayRunLocked(supabase, payRunId)) {
++    return { error: "Cette période est validée : les bulletins ne sont plus modifiables." };
++  }
+ 
+   const labels = formData.getAll("line_label") as string[];
+   const amounts = formData.getAll("line_amount") as string[];
+@@ -52,6 +61,9 @@ export async function savePayslip(
+     .filter((l) => l.label.length > 0);
+ 
+   if (!lines.length) return { error: "Ajoute au moins une ligne au bulletin." };
++  if (lines.some((l) => !Number.isFinite(l.amount))) {
++    return { error: "Un des montants saisis n'est pas un nombre valide." };
++  }
+ 
+   const net_salary = lines.reduce((sum, l) => sum + l.amount, 0);
+ 
+@@ -70,6 +82,9 @@ export async function savePayslip(
+ 
+ export async function generatePayslipPdf(payRunId: string, employeeId: string): Promise<SimpleFormState> {
+   const supabase = createClient();
++  if (await isPayRunLocked(supabase, payRunId)) {
++    return { error: "Cette période est validée : le PDF ne peut plus être régénéré." };
++  }
+ 
+   const [{ data: payslip }, { data: payRun }, { data: employee }] = await Promise.all([
+     supabase.from("payslips").select("*").eq("pay_run_id", payRunId).eq("employee_id", employeeId).single(),
+@@ -88,7 +103,7 @@ export async function generatePayslipPdf(payRunId: string, employeeId: string):
+         employeeName={`${employee.last_name} ${employee.first_name}`}
+         employeeRole={(employee as any).position?.title ?? ""}
+         lines={payslip.lines}
+-        netSalary={payslip.net_salary}
++        netSalary={Number(payslip.net_salary)}
+       />
+     );
+   } catch (e: any) {
+diff --git a/lib/actions/users.ts b/lib/actions/users.ts
+index 9d2c7aa..389ee0e 100644
+--- a/lib/actions/users.ts
++++ b/lib/actions/users.ts
+@@ -1,6 +1,7 @@
+ "use server";
+ 
+ import { revalidatePath } from "next/cache";
++import { headers } from "next/headers";
+ import { createClient } from "@/lib/supabase/server";
+ import { createAdminClient } from "@/lib/supabase/admin";
+ 
+@@ -8,7 +9,7 @@ export interface SimpleFormState {
+   error?: string;
+ }
+ 
+-async function requireAdmin(): Promise<{ error?: string }> {
++async function requireAdmin(): Promise<{ error?: string; userId?: string }> {
+   const supabase = createClient();
+   const { data: { user } } = await supabase.auth.getUser();
+   if (!user) return { error: "Non authentifié." };
+@@ -17,9 +18,25 @@ async function requireAdmin(): Promise<{ error?: string }> {
+   if (profile?.role !== "admin") {
+     return { error: "Action réservée aux administrateurs." };
+   }
+-  return {};
++  return { userId: user.id };
++}
++
++/**
++ * URL publique de l'application. Si NEXT_PUBLIC_SITE_URL n'est pas définie
++ * (oubli fréquent sur Vercel), on la déduit de la requête en cours au lieu
++ * d'envoyer "undefined/auth/..." à Supabase (qui retombe alors sur localhost:3000).
++ */
++function getSiteUrl() {
++  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
++  if (fromEnv) return fromEnv;
++  const h = headers();
++  const host = h.get("x-forwarded-host") ?? h.get("host");
++  const proto = h.get("x-forwarded-proto") ?? "https";
++  return host ? `${proto}://${host}` : "http://localhost:3000";
+ }
+ 
++const VALID_ROLES = ["admin", "rh", "manager", "employe"];
++
+ export async function inviteUser(_prev: SimpleFormState, formData: FormData): Promise<SimpleFormState> {
+   const guard = await requireAdmin();
+   if (guard.error) return guard;
+@@ -28,6 +45,7 @@ export async function inviteUser(_prev: SimpleFormState, formData: FormData): Pr
+   const email = String(formData.get("email") ?? "").trim();
+   const role = String(formData.get("role") ?? "employe");
+ 
++  if (!VALID_ROLES.includes(role)) return { error: "Rôle invalide." };
+   if (!employee_id) return { error: "Sélectionne un employé." };
+   if (!email) return { error: "L'e-mail est obligatoire." };
+ 
+@@ -42,14 +60,22 @@ export async function inviteUser(_prev: SimpleFormState, formData: FormData): Pr
+ 
+   const admin = createAdminClient();
+   const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=/auth/set-password`,
++    // Directement vers la page cliente : elle sait lire les jetons du #fragment.
++    redirectTo: `${getSiteUrl()}/auth/set-password`,
++    data: { full_name: `${employee.last_name} ${employee.first_name}` },
+   });
+ 
+   if (inviteError) {
++    if (/already been registered|already registered/i.test(inviteError.message)) {
++      return { error: "Un compte existe déjà avec cet e-mail." };
++    }
+     return { error: "Échec de l'invitation : " + inviteError.message };
+   }
+ 
+-  const { error: profileError } = await supabase.from("profiles").insert({
++  // upsert (et non insert) : avec le trigger handle_new_user (migration 0005),
++  // une ligne profil peut déjà avoir été créée automatiquement.
++  // Client admin : on a déjà vérifié le rôle admin ci-dessus.
++  const { error: profileError } = await admin.from("profiles").upsert({
+     id: invited.user.id,
+     full_name: `${employee.last_name} ${employee.first_name}`,
+     role,
+@@ -72,6 +98,9 @@ export async function updateUserRole(profileId: string, formData: FormData) {
+   if (guard.error) return;
+ 
+   const role = String(formData.get("role") ?? "employe");
++  if (!VALID_ROLES.includes(role)) return;
++  // Empêche un admin de se retirer lui-même ses droits (risque de verrouillage)
++  if (profileId === guard.userId && role !== "admin") return;
+   const supabase = createClient();
+   await supabase.from("profiles").update({ role }).eq("id", profileId);
+   revalidatePath("/admin/users");
+@@ -81,6 +110,8 @@ export async function deleteUserAccount(profileId: string) {
+   const guard = await requireAdmin();
+   if (guard.error) return;
+ 
++  // Empêche un admin de supprimer son propre compte
++  if (profileId === guard.userId) return;
+   const admin = createAdminClient();
+   await admin.auth.admin.deleteUser(profileId); // supprime aussi le profil (cascade)
+   revalidatePath("/admin/users");
+diff --git a/lib/auth.ts b/lib/auth.ts
+new file mode 100644
+index 0000000..5d483b1
+--- /dev/null
++++ b/lib/auth.ts
+@@ -0,0 +1,26 @@
++import { redirect } from "next/navigation";
++import { createClient } from "@/lib/supabase/server";
++import type { AppRole } from "@/lib/types";
++
++/**
++ * Garde serveur : redirige vers le tableau de bord si l'utilisateur connecté
++ * n'a pas l'un des rôles demandés. La RLS protège déjà les données, mais sans
++ * cette garde un employé pouvait ouvrir /admin ou /payroll et voir des écrans
++ * vides ou des formulaires qui échouent silencieusement.
++ */
++export async function requireRole(roles: AppRole[]) {
++  const supabase = createClient();
++  const { data: { user } } = await supabase.auth.getUser();
++  if (!user) redirect("/login");
++
++  const { data: profile } = await supabase
++    .from("profiles")
++    .select("role")
++    .eq("id", user.id)
++    .single();
++
++  if (!profile || !roles.includes(profile.role as AppRole)) {
++    redirect("/dashboard?acces=refuse");
++  }
++  return { user, role: profile.role as AppRole };
++}
+diff --git a/lib/payslip-pdf.tsx b/lib/payslip-pdf.tsx
+index 0ae254d..d791a3e 100644
+--- a/lib/payslip-pdf.tsx
++++ b/lib/payslip-pdf.tsx
+@@ -1,4 +1,4 @@
+-import { Document, Page, Text, View, StyleSheet, Font } from "@react-pdf/renderer";
++import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+ import type { PayslipLine } from "@/lib/types";
+ 
+ const styles = StyleSheet.create({
+@@ -43,8 +43,14 @@ export function PayslipPdf({
+   lines: PayslipLine[];
+   netSalary: number;
+ }) {
++  // toLocaleString("fr-FR") utilise l'espace fine insécable U+202F comme
++  // séparateur de milliers : la police Helvetica intégrée au PDF ne possède pas
++  // ce glyphe (montants du type "250/000 F" ou caractères manquants). On le
++  // remplace par une espace classique.
+   const formatAmount = (n: number) =>
+-    n.toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " F";
++    Number(n)
++      .toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
++      .replace(/[\u202F\u00A0]/g, " ") + " FCFA";
+ 
+   return (
+     <Document>
+diff --git a/lib/storage-path.ts b/lib/storage-path.ts
+new file mode 100644
+index 0000000..6cd9deb
+--- /dev/null
++++ b/lib/storage-path.ts
+@@ -0,0 +1,21 @@
++/**
++ * Supabase Storage refuse les clés contenant des accents ou certains caractères
++ * spéciaux ("Invalid key"). Un fichier "Diplôme d'ingénieur.pdf" faisait donc
++ * échouer l'envoi. On normalise le nom avant de construire le chemin.
++ */
++export function safeStorageName(fileName: string): string {
++  const dot = fileName.lastIndexOf(".");
++  const base = dot > 0 ? fileName.slice(0, dot) : fileName;
++  const ext = dot > 0 ? fileName.slice(dot + 1) : "";
++  const clean = (s: string) =>
++    s
++      .normalize("NFD")
++      .replace(/[\u0300-\u036f]/g, "") // retire les accents
++      .replace(/[^a-zA-Z0-9-_]+/g, "-") // remplace le reste par "-"
++      .replace(/-+/g, "-")
++      .replace(/^-|-$/g, "")
++      .toLowerCase();
++  const b = clean(base).slice(0, 80) || "fichier";
++  const e = clean(ext).slice(0, 10);
++  return e ? `${b}.${e}` : b;
++}
+diff --git a/next.config.mjs b/next.config.mjs
+index 58b735c..379c269 100644
+--- a/next.config.mjs
++++ b/next.config.mjs
+@@ -8,6 +8,12 @@ const nextConfig = {
+   // normalement au runtime.
+   experimental: {
+     serverComponentsExternalPackages: ["@react-pdf/renderer"],
++    // Par défaut, Next.js limite le corps d'une Server Action à 1 Mo : l'envoi
++    // d'un document (contrat scanné, diplôme PDF...) plus lourd échouait avec
++    // "Body exceeded 1 MB limit". On relève la limite à 10 Mo.
++    serverActions: {
++      bodySizeLimit: "10mb",
++    },
+   },
+ };
+ 
+diff --git a/supabase/migrations/0005_corrections.sql b/supabase/migrations/0005_corrections.sql
+new file mode 100644
+index 0000000..83dfe66
+--- /dev/null
++++ b/supabase/migrations/0005_corrections.sql
+@@ -0,0 +1,167 @@
++-- ============================================================
++-- SIRH — Migration 0005 : corrections de sécurité et de cohérence
++-- À exécuter dans Supabase > SQL Editor APRÈS 0001 → 0004.
++-- Idempotente : peut être relancée sans risque.
++-- ============================================================
++
++-- ------------------------------------------------------------
++-- 1. Durcir la fonction de rôle (security definer SANS search_path fixé
++--    = avertissement "Function Search Path Mutable" du linter Supabase :
++--    un schéma malveillant pourrait détourner la résolution de "profiles").
++-- ------------------------------------------------------------
++create or replace function public.current_role_is(roles app_role[])
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select exists (
++    select 1 from public.profiles
++    where id = auth.uid() and role = any(roles)
++  );
++$$;
++
++-- Petit utilitaire : fiche employé liée à l'utilisateur connecté.
++-- security definer : évite que chaque policy relise "profiles" sous RLS.
++create or replace function public.current_employee_id()
++returns uuid
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select employee_id from public.profiles where id = auth.uid();
++$$;
++
++-- ------------------------------------------------------------
++-- 2. Profil créé automatiquement à la création d'un compte Auth.
++--    Avant : il fallait insérer la ligne "profiles" à la main pour le premier
++--    admin, et un compte sans profil voyait une application vide.
++-- ------------------------------------------------------------
++create or replace function public.handle_new_user()
++returns trigger
++language plpgsql
++security definer
++set search_path = public
++as $$
++begin
++  insert into public.profiles (id, full_name, email, role)
++  values (
++    new.id,
++    coalesce(nullif(new.raw_user_meta_data->>'full_name', ''), split_part(new.email, '@', 1)),
++    new.email,
++    'employe'
++  )
++  on conflict (id) do nothing;
++  return new;
++end;
++$$;
++
++drop trigger if exists on_auth_user_created on auth.users;
++create trigger on_auth_user_created
++  after insert on auth.users
++  for each row execute function public.handle_new_user();
++
++-- Rattrapage : crée les profils manquants pour les comptes déjà existants.
++insert into public.profiles (id, full_name, email, role)
++select u.id, split_part(u.email, '@', 1), u.email, 'employe'
++from auth.users u
++left join public.profiles p on p.id = u.id
++where p.id is null;
++
++-- Un même employé ne doit pas être relié à deux comptes.
++create unique index if not exists uq_profiles_employee_id
++  on public.profiles(employee_id) where employee_id is not null;
++
++-- ------------------------------------------------------------
++-- 3. Documents : l'employé pouvait lire la LIGNE (table employee_documents)
++--    mais pas le FICHIER (storage) → lien de téléchargement toujours absent.
++-- ------------------------------------------------------------
++drop policy if exists "storage_documents_self_read" on storage.objects;
++create policy "storage_documents_self_read" on storage.objects
++  for select using (
++    bucket_id = 'employee-documents'
++    and (storage.foldername(name))[1] = public.current_employee_id()::text
++  );
++
++-- ------------------------------------------------------------
++-- 4. Bulletins : l'employé ne voit que ceux des périodes VALIDÉES.
++--    Fonctions security definer : évitent l'erreur "infinite recursion
++--    detected in policy" (payslips → pay_runs → payslips).
++-- ------------------------------------------------------------
++create or replace function public.pay_run_is_validated(run_id uuid)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select exists (select 1 from public.pay_runs where id = run_id and status = 'valide');
++$$;
++
++create or replace function public.employee_has_payslip_in(run_id uuid)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public
++as $$
++  select exists (
++    select 1 from public.payslips
++    where pay_run_id = run_id and employee_id = public.current_employee_id()
++  );
++$$;
++
++drop policy if exists "payslips_self_read" on public.payslips;
++create policy "payslips_self_read" on public.payslips
++  for select using (
++    employee_id = public.current_employee_id()
++    and public.pay_run_is_validated(pay_run_id)
++  );
++
++-- L'employé doit pouvoir lire le libellé de la période de ses bulletins
++-- (sinon la jointure pay_run:pay_runs(...) de "Mes bulletins" revient vide).
++drop policy if exists "pay_runs_self_read" on public.pay_runs;
++create policy "pay_runs_self_read" on public.pay_runs
++  for select using (
++    status = 'valide' and public.employee_has_payslip_in(id)
++  );
++
++-- ------------------------------------------------------------
++-- 5. Verrou en base : aucun bulletin modifiable dans une période validée
++--    (protection même si quelqu'un contourne l'interface).
++-- ------------------------------------------------------------
++create or replace function public.prevent_locked_payslip_change()
++returns trigger
++language plpgsql
++set search_path = public
++as $$
++declare
++  run_id uuid;
++begin
++  run_id := coalesce(new.pay_run_id, old.pay_run_id);
++  if exists (select 1 from public.pay_runs where id = run_id and status = 'valide') then
++    raise exception 'Période de paie validée : bulletin non modifiable.';
++  end if;
++  return coalesce(new, old);
++end;
++$$;
++
++drop trigger if exists trg_payslips_lock on public.payslips;
++create trigger trg_payslips_lock
++  before insert or update or delete on public.payslips
++  for each row execute function public.prevent_locked_payslip_change();
++
++-- ------------------------------------------------------------
++-- 6. Manager : peut lire l'historique de carrière de son équipe directe
++--    (cohérent avec employees_manager_read_team).
++-- ------------------------------------------------------------
++drop policy if exists "history_manager_read_team" on public.employee_history;
++create policy "history_manager_read_team" on public.employee_history
++  for select using (
++    employee_id in (
++      select e.id from public.employees e
++      where e.manager_id = public.current_employee_id()
++    )
++  );
+-- 
+2.39.5
+
